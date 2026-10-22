@@ -1,0 +1,225 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>Library QR Attendance Scanner</title>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 520px;
+      margin: 0 auto;
+      padding: 20px;
+      text-align: center;
+      background: #f1f4f8;
+      color: #222;
+    }
+
+    h1 {
+      font-size: 25px;
+      margin-bottom: 8px;
+    }
+
+    .description {
+      color: #555;
+      line-height: 1.5;
+    }
+
+    #reader {
+      width: 100%;
+      margin: 20px auto;
+      background: white;
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    #status {
+      padding: 15px;
+      margin-top: 15px;
+      background: white;
+      border-radius: 8px;
+      border: 1px solid #ddd;
+      overflow-wrap: anywhere;
+      line-height: 1.5;
+    }
+
+    .small {
+      font-size: 13px;
+      color: #666;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Library Attendance Scanner</h1>
+
+  <p class="description">
+    Allow camera access and point your camera at a
+    student's QR code to record their attendance.
+  </p>
+
+  <div id="reader"></div>
+
+  <p id="status" role="status" aria-live="polite">
+    Preparing scanner...
+  </p>
+
+  <p class="small">
+    Each recognized student ID records an entry or exit.
+    Test with sample IDs before using this system.
+  </p>
+
+  <script>
+    // IMPORTANT: Replace this with your own deployed Apps Script URL.
+    const GAS_URL =
+      "PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE";
+
+    const statusBox = document.getElementById("status");
+
+    let scanner = null;
+    let lastScannedId = "";
+    let lastScanTime = 0;
+    let requestNumber = 0;
+
+    function showStatus(message, color) {
+      statusBox.textContent = message;
+      statusBox.style.color = color || "#222";
+    }
+
+    function sendScan(studentId) {
+      const id = String(studentId || "").trim();
+      const now = Date.now();
+
+      if (!id) {
+        return;
+      }
+
+      // Avoid repeatedly processing the same QR in quick succession.
+      if (
+        id === lastScannedId &&
+        now - lastScanTime < 5000
+      ) {
+        return;
+      }
+
+      lastScannedId = id;
+      lastScanTime = now;
+
+      showStatus("QR detected. Recording attendance...");
+
+      const callbackName = "scanCallback" + (++requestNumber);
+      const script = document.createElement("script");
+
+      let finished = false;
+
+      function cleanup() {
+        if (finished) {
+          return;
+        }
+
+        finished = true;
+        delete window[callbackName];
+        script.remove();
+      }
+
+      window[callbackName] = function(result) {
+        const message =
+          result && result.message
+            ? result.message
+            : "The server returned an unexpected response.";
+
+        if (result && result.type !== "error") {
+          showStatus(message, "green");
+        } else {
+          showStatus(message, "red");
+        }
+
+        cleanup();
+      };
+
+      script.onerror = function() {
+        showStatus(
+          "Connection failed. Check your Apps Script URL, deployment access, and internet connection.",
+          "red"
+        );
+        cleanup();
+      };
+
+      const separator = GAS_URL.includes("?") ? "&" : "?";
+
+      script.src =
+        GAS_URL +
+        separator +
+        "scan=" + encodeURIComponent(id) +
+        "&callback=" + encodeURIComponent(callbackName) +
+        "&request=" + Date.now();
+
+      document.body.appendChild(script);
+    }
+
+    async function startScanner() {
+      if (
+        !GAS_URL.startsWith("https://script.google.com/a/macros/cmc.pshs.edu.ph/s/AKfycbz1ghm5cLE6Z1IgtTgLcLCqN1unbu8txJGaIgQNveUsTA-Eq4YMu2pzT6HonS-tGa8JBA/exec") ||
+        !GAS_URL.endsWith("/exec")
+      ) {
+        showStatus(
+          "Setup required: paste your deployed Apps Script URL into GAS_URL in this file.",
+          "red"
+        );
+        return;
+      }
+
+      if (typeof Html5Qrcode === "undefined") {
+        showStatus(
+          "The scanner library could not load. Check your internet connection and refresh this page.",
+          "red"
+        );
+        return;
+      }
+
+      try {
+        scanner = new Html5Qrcode("reader");
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 230, height: 230 },
+            aspectRatio: 1.0
+          },
+          function(decodedText) {
+            sendScan(decodedText);
+          },
+          function() {
+            // No QR found in this camera frame.
+          }
+        );
+
+        showStatus(
+          "Camera ready. Point it at a student's QR code.",
+          "green"
+        );
+
+      } catch (error) {
+        showStatus(
+          "Could not open the camera. Open this HTTPS page in Chrome, allow camera access, and close other apps using the camera. Details: " +
+          String(error),
+          "red"
+        );
+      }
+    }
+
+    startScanner();
+  </script>
+</body>
+</html>

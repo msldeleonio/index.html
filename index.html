@@ -57,6 +57,42 @@
       color: #666;
       line-height: 1.5;
     }
+
+    #zoomControl {
+      display: none;
+      background: white;
+      padding: 15px;
+      margin: 15px auto;
+      border-radius: 10px;
+      border: 1px solid #ddd;
+      text-align: left;
+    }
+
+    #zoomSlider {
+      width: 100%;
+      margin-top: 15px;
+      cursor: pointer;
+      accent-color: #1769aa;
+    }
+
+    #zoomValue {
+      color: #1769aa;
+    }
+
+    .zoom-buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .zoom-buttons button {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid #ddd;
+      background: #f1f4f8;
+      border-radius: 6px;
+      cursor: pointer;
+    }
   </style>
 </head>
 
@@ -70,6 +106,31 @@
 
   <div id="reader"></div>
 
+  <div id="zoomControl">
+    <label for="zoomSlider">
+      <strong>Camera Zoom:</strong>
+      <span id="zoomValue">1x</span>
+    </label>
+
+    <input
+      type="range"
+      id="zoomSlider"
+      min="1"
+      max="3"
+      step="0.1"
+      value="1"
+    >
+
+    <div class="zoom-buttons">
+      <button type="button" id="zoomOut">− Zoom Out</button>
+      <button type="button" id="zoomIn">+ Zoom In</button>
+    </div>
+
+    <p class="small">
+      Adjust the zoom to help scan small QR codes.
+    </p>
+  </div>
+
   <p id="status" role="status" aria-live="polite">
     Preparing scanner...
   </p>
@@ -80,16 +141,22 @@
   </p>
 
   <script>
-    // IMPORTANT: Replace this with your own deployed Apps Script URL.
+    // YOUR EXISTING GOOGLE APPS SCRIPT URL
     const GAS_URL =
       "https://script.google.com/a/macros/cmc.pshs.edu.ph/s/AKfycbz1ghm5cLE6Z1IgtTgLcLCqN1unbu8txJGaIgQNveUsTA-Eq4YMu2pzT6HonS-tGa8JBA/exec";
 
     const statusBox = document.getElementById("status");
+    const zoomControl = document.getElementById("zoomControl");
+    const zoomSlider = document.getElementById("zoomSlider");
+    const zoomValue = document.getElementById("zoomValue");
 
     let scanner = null;
     let lastScannedId = "";
     let lastScanTime = 0;
     let requestNumber = 0;
+    let currentZoom = 1;
+    let zoomSupported = false;
+    let scanInProgress = false;
 
     function showStatus(message, color) {
       statusBox.textContent = message;
@@ -104,7 +171,7 @@
         return;
       }
 
-      // Avoid repeatedly processing the same QR in quick succession.
+      // Prevent repeated scans of the same code within 5 seconds.
       if (
         id === lastScannedId &&
         now - lastScanTime < 5000
@@ -122,12 +189,23 @@
 
       let finished = false;
 
+      // Prevent a stalled request from leaving the page stuck.
+      const timeout = setTimeout(function() {
+        if (finished) return;
+
+        cleanup();
+
+        showStatus(
+          "The server did not respond in time. Check your connection and try scanning again.",
+          "red"
+        );
+      }, 20000);
+
       function cleanup() {
-        if (finished) {
-          return;
-        }
+        if (finished) return;
 
         finished = true;
+        clearTimeout(timeout);
         delete window[callbackName];
         script.remove();
       }
@@ -152,6 +230,7 @@
           "Connection failed. Check your Apps Script URL, deployment access, and internet connection.",
           "red"
         );
+
         cleanup();
       };
 
@@ -167,26 +246,124 @@
       document.body.appendChild(script);
     }
 
-    async function startScanner() {
+    function setupZoomControl() {
+      try {
+        const capabilities =
+          scanner.getRunningTrackCapabilities();
 
-      if (
-        !GAS_URL.startsWith("https://script.google.com/") ||
-        !GAS_URL.endsWith("/exec") ||
-        GAS_URL.includes("PASTE_YOUR")
-      ) {
-        showStatus(
-          "Setup required: paste your deployed Apps Script URL into GAS_URL in this file.",
-          "red"
+        const zoom = capabilities.zoom;
+
+        if (
+          !zoom ||
+          typeof zoom.min !== "number" ||
+          typeof zoom.max !== "number" ||
+          zoom.max <= zoom.min
+        ) {
+          zoomControl.style.display = "none";
+
+          showStatus(
+            "Camera ready. Hardware zoom is unavailable in this browser. Move the phone closer to the QR code.",
+            "#8a5a00"
+          );
+
+          return;
+        }
+
+        zoomSupported = true;
+
+        const minZoom = zoom.min;
+        const maxZoom = zoom.max;
+        const step = zoom.step || 0.1;
+
+        currentZoom = Math.max(
+          minZoom,
+          Math.min(1, maxZoom)
         );
+
+        zoomSlider.min = minZoom;
+        zoomSlider.max = maxZoom;
+        zoomSlider.step = step;
+        zoomSlider.value = currentZoom;
+
+        zoomValue.textContent =
+          Number(currentZoom.toFixed(1)) + "x";
+
+        zoomControl.style.display = "block";
+
+        zoomSlider.addEventListener("input", function() {
+          applyZoom(Number(zoomSlider.value));
+        });
+
+        document.getElementById("zoomIn")
+          .addEventListener("click", function() {
+            const next = Math.min(
+              maxZoom,
+              Number(zoomSlider.value) + step
+            );
+
+            zoomSlider.value = next;
+            applyZoom(next);
+          });
+
+        document.getElementById("zoomOut")
+          .addEventListener("click", function() {
+            const next = Math.max(
+              minZoom,
+              Number(zoomSlider.value) - step
+            );
+
+            zoomSlider.value = next;
+            applyZoom(next);
+          });
+
+      } catch (error) {
+        zoomSupported = false;
+        zoomControl.style.display = "none";
+      }
+    }
+
+    async function applyZoom(value) {
+      if (!zoomSupported || !scanner) {
         return;
       }
 
+      zoomValue.textContent =
+        Number(value.toFixed(1)) + "x";
+
+      try {
+        await scanner.applyVideoConstraints({
+          advanced: [{ zoom: value }]
+        });
+
+        currentZoom = value;
+
+      } catch (error) {
+        showStatus(
+          "The camera could not apply this zoom level. Try another setting.",
+          "red"
+        );
+      }
+    }
+
+    async function startScanner() {
+      if (
+        !GAS_URL.startsWith("https://script.google.com/") ||
+        !GAS_URL.endsWith("/exec")
+      ) {
+        showStatus(
+          "Setup required: enter your deployed Apps Script URL.",
+          "red"
+        );
+
+        return;
+      }
 
       if (typeof Html5Qrcode === "undefined") {
         showStatus(
-          "The scanner library could not load. Check your internet connection and refresh this page.",
+          "The scanner library could not load. Check your internet connection and refresh.",
           "red"
         );
+
         return;
       }
 
@@ -196,22 +373,44 @@
         await scanner.start(
           { facingMode: "environment" },
           {
-            fps: 10,
-            qrbox: { width: 230, height: 230 },
+            fps: 15,
+            qrbox: function(viewfinderWidth, viewfinderHeight) {
+              const size = Math.floor(
+                Math.min(
+                  viewfinderWidth * 0.85,
+                  viewfinderHeight * 0.65,
+                  320
+                )
+              );
+
+              return {
+                width: size,
+                height: size
+              };
+            },
             aspectRatio: 1.0
           },
           function(decodedText) {
             sendScan(decodedText);
           },
           function() {
-            // No QR found in this camera frame.
+            // No QR code found in this frame.
           }
         );
 
-        showStatus(
-          "Camera ready. Point it at a student's QR code.",
-          "green"
-        );
+        setupZoomControl();
+
+        if (!zoomSupported) {
+          showStatus(
+            "Camera ready. Point it at a student's QR code.",
+            "green"
+          );
+        } else {
+          showStatus(
+            "Camera ready. Adjust the zoom slider if needed.",
+            "green"
+          );
+        }
 
       } catch (error) {
         showStatus(

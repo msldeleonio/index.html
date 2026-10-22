@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,46 +41,6 @@
       overflow: hidden;
     }
 
-    #reader video {
-      max-width: 100%;
-    }
-
-    #zoomControl {
-      display: block;
-      background: white;
-      padding: 15px;
-      margin: 15px auto;
-      border-radius: 10px;
-      border: 1px solid #ddd;
-      text-align: left;
-    }
-
-    #zoomSlider {
-      width: 100%;
-      margin-top: 15px;
-      cursor: pointer;
-      accent-color: #1769aa;
-    }
-
-    #zoomValue {
-      color: #1769aa;
-    }
-
-    .zoom-buttons {
-      display: flex;
-      gap: 8px;
-      margin-top: 12px;
-    }
-
-    .zoom-buttons button {
-      flex: 1;
-      padding: 10px;
-      border: 1px solid #ddd;
-      background: #f1f4f8;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-
     #status {
       padding: 15px;
       margin-top: 15px;
@@ -101,46 +60,14 @@
 </head>
 
 <body>
-
   <h1>Library Attendance Scanner</h1>
 
   <p class="description">
     Allow camera access and point your camera at a
-    student's QR code to record attendance.
+    student's QR code to record their attendance.
   </p>
 
   <div id="reader"></div>
-
-  <div id="zoomControl">
-    <label for="zoomSlider">
-      <strong>Camera Zoom:</strong>
-      <span id="zoomValue">1x</span>
-    </label>
-
-    <input
-      type="range"
-      id="zoomSlider"
-      min="1"
-      max="3"
-      step="0.1"
-      value="1"
-      disabled
-    >
-
-    <div class="zoom-buttons">
-      <button type="button" id="zoomOut" disabled>
-        − Zoom Out
-      </button>
-
-      <button type="button" id="zoomIn" disabled>
-        + Zoom In
-      </button>
-    </div>
-
-    <p id="zoomMessage" class="small">
-      Checking camera zoom support...
-    </p>
-  </div>
 
   <p id="status" role="status" aria-live="polite">
     Preparing scanner...
@@ -152,39 +79,31 @@
   </p>
 
   <script>
-    // YOUR EXISTING GOOGLE APPS SCRIPT URL
+    // IMPORTANT: Replace this with your own deployed Apps Script URL.
     const GAS_URL =
-  "https://script.google.com/macros/s/AKfycbxIgOAlgcXLpCIt8eTKh_iJXTxZIp-szDl4El9s3SUuYFwBh2xnxIfQus_bpEWh6cR2qQ/exec";
-    
+      "https://script.google.com/a/macros/cmc.pshs.edu.ph/s/AKfycbz1ghm5cLE6Z1IgtTgLcLCqN1unbu8txJGaIgQNveUsTA-Eq4YMu2pzT6HonS-tGa8JBA/exec";
+
     const statusBox = document.getElementById("status");
-    const zoomSlider = document.getElementById("zoomSlider");
-    const zoomValue = document.getElementById("zoomValue");
-    const zoomMessage = document.getElementById("zoomMessage");
-    const zoomInButton = document.getElementById("zoomIn");
-    const zoomOutButton = document.getElementById("zoomOut");
 
     let scanner = null;
     let lastScannedId = "";
     let lastScanTime = 0;
     let requestNumber = 0;
-    let zoomSupported = false;
-    let minZoom = 1;
-    let maxZoom = 1;
-    let zoomStep = 0.1;
 
     function showStatus(message, color) {
       statusBox.textContent = message;
       statusBox.style.color = color || "#222";
     }
 
-    // Send the scanned student ID to Google Apps Script.
     function sendScan(studentId) {
       const id = String(studentId || "").trim();
       const now = Date.now();
 
-      if (!id) return;
+      if (!id) {
+        return;
+      }
 
-      // Avoid processing the same QR repeatedly within 5 seconds.
+      // Avoid repeatedly processing the same QR in quick succession.
       if (
         id === lastScannedId &&
         now - lastScanTime < 5000
@@ -202,20 +121,12 @@
 
       let finished = false;
 
-      const timeout = setTimeout(function() {
-        cleanup();
-
-        showStatus(
-          "The server did not respond in time. Check your connection and try again.",
-          "red"
-        );
-      }, 20000);
-
       function cleanup() {
-        if (finished) return;
+        if (finished) {
+          return;
+        }
 
         finished = true;
-        clearTimeout(timeout);
         delete window[callbackName];
         script.remove();
       }
@@ -240,7 +151,6 @@
           "Connection failed. Check your Apps Script URL, deployment access, and internet connection.",
           "red"
         );
-
         cleanup();
       };
 
@@ -256,130 +166,26 @@
       document.body.appendChild(script);
     }
 
-    // Set up the real camera zoom controls.
-    function setupZoomControl() {
-      try {
-        const capabilities =
-          scanner.getRunningTrackCapabilities();
-
-        const zoom = capabilities.zoom;
-
-        if (
-          !zoom ||
-          typeof zoom.min !== "number" ||
-          typeof zoom.max !== "number" ||
-          zoom.max <= zoom.min
-        ) {
-          disableZoom(
-            "This phone or browser does not provide hardware zoom to the webpage. Move closer to the QR code or try another browser/device."
-          );
-
-          return;
-        }
-
-        zoomSupported = true;
-        minZoom = zoom.min;
-        maxZoom = zoom.max;
-        zoomStep = zoom.step || 0.1;
-
-        zoomSlider.min = minZoom;
-        zoomSlider.max = maxZoom;
-        zoomSlider.step = zoomStep;
-
-        const initialZoom = Math.max(
-          minZoom,
-          Math.min(1, maxZoom)
-        );
-
-        zoomSlider.value = initialZoom;
-        zoomSlider.disabled = false;
-        zoomInButton.disabled = false;
-        zoomOutButton.disabled = false;
-
-        updateZoomLabel(initialZoom);
-
-        zoomMessage.textContent =
-          "Use the slider or buttons to zoom the camera.";
-
-      } catch (error) {
-        disableZoom(
-          "Hardware zoom is unavailable in this browser. Try moving closer to the QR code."
-        );
-      }
-    }
-
-    function disableZoom(message) {
-      zoomSupported = false;
-      zoomSlider.disabled = true;
-      zoomInButton.disabled = true;
-      zoomOutButton.disabled = true;
-      zoomMessage.textContent = message;
-      zoomMessage.style.color = "#8a5a00";
-    }
-
-    function updateZoomLabel(value) {
-      zoomValue.textContent =
-        Number(value).toFixed(1) + "x";
-    }
-
-    async function applyZoom(value) {
-      if (!zoomSupported || !scanner) return;
-
-      value = Math.max(
-        minZoom,
-        Math.min(maxZoom, value)
-      );
-
-      zoomSlider.value = value;
-      updateZoomLabel(value);
-
-      try {
-        await scanner.applyVideoConstraints({
-          advanced: [{ zoom: value }]
-        });
-
-        zoomMessage.textContent =
-          "Camera zoom set to " +
-          Number(value).toFixed(1) + "x.";
-
-      } catch (error) {
-        disableZoom(
-          "The camera could not apply zoom. Move closer to the QR code instead."
-        );
-      }
-    }
-
-    zoomSlider.addEventListener("input", function() {
-      applyZoom(Number(zoomSlider.value));
-    });
-
-    zoomInButton.addEventListener("click", function() {
-      applyZoom(Number(zoomSlider.value) + zoomStep);
-    });
-
-    zoomOutButton.addEventListener("click", function() {
-      applyZoom(Number(zoomSlider.value) - zoomStep);
-    });
-
     async function startScanner() {
+
       if (
         !GAS_URL.startsWith("https://script.google.com/") ||
-        !GAS_URL.endsWith("/exec")
+        !GAS_URL.endsWith("/exec") ||
+        GAS_URL.includes("PASTE_YOUR")
       ) {
         showStatus(
-          "Setup required: check your deployed Apps Script URL.",
+          "Setup required: paste your deployed Apps Script URL into GAS_URL in this file.",
           "red"
         );
-
         return;
       }
 
+
       if (typeof Html5Qrcode === "undefined") {
         showStatus(
-          "The scanner library could not load. Check your internet connection and refresh.",
+          "The scanner library could not load. Check your internet connection and refresh this page.",
           "red"
         );
-
         return;
       }
 
@@ -389,35 +195,17 @@
         await scanner.start(
           { facingMode: "environment" },
           {
-            fps: 15,
-
-            // A larger scan area for QR codes.
-            qrbox: function(viewfinderWidth, viewfinderHeight) {
-              const size = Math.floor(
-                Math.min(
-                  viewfinderWidth * 0.85,
-                  viewfinderHeight * 0.65,
-                  320
-                )
-              );
-
-              return {
-                width: size,
-                height: size
-              };
-            },
-
+            fps: 10,
+            qrbox: { width: 230, height: 230 },
             aspectRatio: 1.0
           },
           function(decodedText) {
             sendScan(decodedText);
           },
           function() {
-            // No QR code detected in this frame.
+            // No QR found in this camera frame.
           }
         );
-
-        setupZoomControl();
 
         showStatus(
           "Camera ready. Point it at a student's QR code.",
@@ -435,6 +223,5 @@
 
     startScanner();
   </script>
-
 </body>
 </html>

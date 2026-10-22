@@ -82,7 +82,7 @@
   <script>
     // IMPORTANT: Replace this with your own deployed Apps Script URL.
     const GAS_URL =
-      "PASTE_YOUR_APPS_SCRIPT_EXEC_URL_HERE";
+      "https://script.google.com/a/macros/cmc.pshs.edu.ph/s/AKfycbz1ghm5cLE6Z1IgtTgLcLCqN1unbu8txJGaIgQNveUsTA-Eq4YMu2pzT6HonS-tGa8JBA/exec";
 
     const statusBox = document.getElementById("status");
 
@@ -168,9 +168,11 @@
     }
 
     async function startScanner() {
+
       if (
-        !GAS_URL.startsWith("https://script.google.com/a/macros/cmc.pshs.edu.ph/s/AKfycbz1ghm5cLE6Z1IgtTgLcLCqN1unbu8txJGaIgQNveUsTA-Eq4YMu2pzT6HonS-tGa8JBA/exec") ||
-        !GAS_URL.endsWith("/exec")
+        !GAS_URL.startsWith("https://script.google.com/") ||
+        !GAS_URL.endsWith("/exec") ||
+        GAS_URL.includes("PASTE_YOUR")
       ) {
         showStatus(
           "Setup required: paste your deployed Apps Script URL into GAS_URL in this file.",
@@ -178,6 +180,7 @@
         );
         return;
       }
+
 
       if (typeof Html5Qrcode === "undefined") {
         showStatus(
